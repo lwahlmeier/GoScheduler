@@ -40,6 +40,11 @@ func (ps *PoolScheduler) doWork() {
 	defer ps.waiter.Done()
 	for ps.running.Load() {
 		job := <-ps.runJob
+		select {
+		case <-job.ctx.Done():
+			continue
+		default:
+		}
 		execJob(job, ps)
 	}
 }
@@ -60,11 +65,7 @@ func (ps *PoolScheduler) run() {
 			if len(ps.jobs) > 0 {
 				runJob := ps.jobs[0]
 				ps.jobs = ps.jobs[1:]
-				select {
-				case <-runJob.ctx.Done():
-					continue
-				default:
-				}
+
 				ps.runJob <- runJob
 				if len(ps.jobs) > 0 {
 					if needSort {
@@ -121,7 +122,7 @@ func (ps *PoolScheduler) Stop() {
 		ps.Clear()
 		for i := 0; i < ps.workers; i++ {
 			select {
-			case ps.runJob <- &job{recurring: false, callable: func() {}}:
+			case ps.runJob <- &job{recurring: false, callable: func() {}, ctx: context.Background()}:
 			default:
 			}
 		}

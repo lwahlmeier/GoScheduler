@@ -2,7 +2,6 @@ package GoScheduler
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,7 +35,6 @@ func CreateDynamicScheduler() *DynamicScheduler {
 }
 
 func (sch *DynamicScheduler) doWork() {
-	fmt.Println("Started-work")
 	sch.waiter.Add(1)
 	defer sch.waiter.Done()
 	for sch.running.Load() {
@@ -44,16 +42,19 @@ func (sch *DynamicScheduler) doWork() {
 		select {
 		case job := <-sch.runJob:
 			expireTimer.Stop()
+			select {
+			case <-job.ctx.Done():
+				continue
+			default:
+			}
 			execJob(job, sch)
 		case <-expireTimer.C:
 			return
 		}
 	}
-	fmt.Println("Done-work")
 }
 
 func (sch *DynamicScheduler) run() {
-	fmt.Println("Started")
 	sch.waiter.Add(1)
 	defer sch.waiter.Done()
 	baseDelay := time.After(waitTime)
@@ -69,12 +70,6 @@ func (sch *DynamicScheduler) run() {
 			if len(sch.jobs) > 0 {
 				runJob := sch.jobs[0]
 				sch.jobs = sch.jobs[1:]
-
-				select {
-				case <-runJob.ctx.Done():
-					continue
-				default:
-				}
 
 				select {
 				case sch.runJob <- runJob:
@@ -107,7 +102,6 @@ func (sch *DynamicScheduler) run() {
 			}
 		}
 	}
-	fmt.Println("Done")
 }
 
 func (sch *DynamicScheduler) Schedule(delay time.Duration, recurring bool, callable func()) {
@@ -135,7 +129,7 @@ func (sch *DynamicScheduler) Stop() {
 		sch.Clear()
 		for {
 			select {
-			case sch.runJob <- &job{recurring: false, callable: func() {}}:
+			case sch.runJob <- &job{recurring: false, callable: func() {}, ctx: context.Background()}:
 			default:
 				return
 			}

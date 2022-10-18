@@ -1,6 +1,8 @@
 package GoScheduler
 
 import (
+	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -55,4 +57,23 @@ func TestWaitStop(t *testing.T) {
 	sch.WaitForStop()
 	assert.False(t, sch.IsRunning())
 	assert.True(t, time.Since(st) >= (time.Millisecond*100))
+}
+
+func TestCancel(t *testing.T) {
+	waitTime = time.Millisecond * 50000
+	sch := CreateDynamicScheduler()
+	ctx, cf := context.WithCancel(context.Background())
+	sch.ScheduleWithContext(time.Millisecond, true, func() {
+		assert.Fail(t, "Bad")
+	}, ctx)
+	cf()
+	waiter := sync.WaitGroup{}
+	waiter.Add(1)
+	ctx, cf = context.WithCancel(context.Background())
+	sch.ScheduleWithContext(time.Millisecond*5, true, func() {
+		waiter.Done()
+	}, ctx)
+	waiter.Wait()
+	cf()
+	time.Sleep(time.Millisecond * 10)
 }
