@@ -21,7 +21,7 @@ func CreatePoolScheduler(workers int) *PoolScheduler {
 	ps := &PoolScheduler{
 		clearChan: make(chan bool, 10),
 		newJob:    make(chan *job),
-		runJob:    make(chan *job, 1),
+		runJob:    make(chan *job, workers*2),
 		jobs:      make([]*job, 0),
 		running:   atomic.Bool{},
 		workers:   workers,
@@ -64,15 +64,21 @@ func (ps *PoolScheduler) run() {
 			nextDelay = baseDelay
 			if len(ps.jobs) > 0 {
 				runJob := ps.jobs[0]
-				ps.jobs = ps.jobs[1:]
 
-				ps.runJob <- runJob
-				if len(ps.jobs) > 0 {
-					if needSort {
-						sortJobs(ps.jobs)
-						needSort = false
+				select {
+				case ps.runJob <- runJob:
+					ps.jobs = ps.jobs[1:]
+					if len(ps.jobs) > 0 {
+						if needSort {
+							sortJobs(ps.jobs)
+							needSort = false
+						}
+						nextDelay = ps.jobs[0].timer
 					}
-					nextDelay = ps.jobs[0].timer
+				default:
+					// We cant put on runJob Queue so we delay a
+					// mill to make sure its not waiting on us
+					nextDelay = time.After(time.Millisecond)
 				}
 			} else {
 				baseDelay = time.After(waitTime)
